@@ -41,7 +41,7 @@ struct GenerationalIndex {
     }
 };
 namespace std{
-    template<> struct tr1::hash<GenerationalIndex>{
+    template<> struct std::tr1::hash<GenerationalIndex>{
         size_t operator()(const GenerationalIndex &GI) const{
             return (hash<uint32_t>()(GI.index) ^ hash<uint32_t>()(GI.generation));
         }
