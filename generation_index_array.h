@@ -20,16 +20,39 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <vector>
 #include <cstdint>
 #include <optional>
-#include <cassert>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <fstream>
 
 struct GenerationalIndex {
     uint32_t index = 0;
     uint32_t generation = 0;
-};
 
+    bool operator<(const GenerationalIndex& other) const { 
+        if(generation == other.generation)
+            return index < other.index;
+        else 
+            return generation < other.generation; 
+    }
+    
+    bool operator==(const GenerationalIndex& other) const { 
+        return index == other.index && generation == other.generation; 
+    }
+};
+namespace std{
+    template<> struct tr1::hash<GenerationalIndex>{
+        size_t operator()(const GenerationalIndex &GI) const{
+            return (hash<uint32_t>()(GI.index) ^ hash<uint32_t>()(GI.generation));
+        }
+    };
+}
+
+std::ostream& operator<<(std::ostream &os, GenerationalIndex ind)
+{
+    os << "Generation: " << ind.generation << "Index: " << ind.index << std::endl;
+    return os;
+}
 class GenerationalIndexAllocator
 {
     struct AllocatorEntry {
@@ -99,22 +122,24 @@ class GenerationalIndexArray
     std::vector<std::optional<Entry>> m_entries;
     GenerationalIndexAllocator m_allocator;
 
+    
 public:
+
+    T& operator[](GenerationalIndex index)
+    {
+        return *get(index);
+    }
+
+    const T& operator[](const GenerationalIndex index) const
+    {
+        return *get(index);
+    }
+
     // Sets the value at a specific index inside the array
     void set(const GenerationalIndex index, T &&value)
     {
         while (m_entries.size() <= index.index)
             m_entries.emplace_back(std::nullopt);
-
-#ifndef NDEBUG
-        uint32_t previousGeneration = 0;
-
-        const auto &previousEntry = m_entries[index.index];
-        if (previousEntry)
-            previousGeneration = previousEntry->generation;
-
-        assert(index.generation >= previousGeneration);
-#endif
 
         m_entries[index.index] = std::optional<Entry>{ { index.generation, std::move(value) } };
     }
@@ -175,16 +200,21 @@ public:
         return static_cast<uint32_t>(m_entries.size());
     }
 
-    //get all valid values in the array
-    std::vector<T> get_all_valid_values() const {
-        std::vector<T> valid_values; 
-        for(auto entry : m_entries)
+    const std::vector<T> get_all_valid_values() const {
+        std::vector<T> valid_values;
+        valid_values.reserve(m_entries.size()); 
+        for(auto&& entry : m_entries)
         {
-            if(entry) valid_values.push_back(entry->value);
+            if(entry) valid_values.emplace_back(entry->value);
         }
         return valid_values;
     }
 
+    bool is_live(GenerationalIndex index)
+    {
+        if (m_allocator.isLive(index)) return true;
+        else return false;
+    }
     // Convert an entry index into a GenerationalIndex, if possible otherwise returns nullopt
     std::optional<GenerationalIndex> indexAtEntry(uint32_t entryIndex) const
     {
